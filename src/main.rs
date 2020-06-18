@@ -1,8 +1,14 @@
-use lcd::{LCD, GpioPins};
+use lcd::{CharSize, GpioPin::*, Pins, LCD};
 
 fn main() {
-    let lcd = LCD::new(GpioPins {rs: 7, rw: None, enable: 8, d0123: [9, 10, 11, 12], d4567: None });
+    let mut lcd = LCD::new(Pins {
+        rs: P7,
+        rw: None,
+        enable: P8,
+        data: [P9, P10, P11, P12, NONE, NONE, NONE, NONE],
+    });
 
+    lcd.begin(16, 2, CharSize::Dots5x8);
     lcd.set_cursor(0, 0);
     lcd.print("Hello, ...");
     lcd.set_cursor(1, 1);
