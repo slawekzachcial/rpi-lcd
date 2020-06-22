@@ -1,6 +1,11 @@
 // use gpio_cdev::*;
 use std::{thread, time};
 use std::ops::BitOr;
+use std::convert::TryInto;
+
+fn delay_micros(micros: u64) {
+    thread::sleep(time::Duration::from_micros(micros));
+}
 
 #[derive(Debug, PartialEq)]
 pub enum GpioPin {
@@ -37,11 +42,11 @@ pub enum GpioPin {
 
 impl GpioPin {
     fn set_mode(&self, mode: GpioPinMode) {
-        println!("Set pin mode: {:?} -> {:?}", self, mode);
+        eprintln!("Set pin mode: {:?} -> {:?}", self, mode);
     }
 
     fn write(&self, value: GpioPinSignal) {
-        println!("Write to pin: {:?} -> {:?}", self, value);
+        eprintln!("{:3} -> {:?}", format!("{:?}", self), value);
     }
 }
 
@@ -100,6 +105,14 @@ impl BitOr<&DisplayMode> for Command {
 
     fn bitor(self, rhs: &DisplayMode) -> u8 {
         self as u8 | rhs.entry_mode as u8 | rhs.entry_shift_mode as u8
+    }
+}
+
+impl BitOr<u8> for Command {
+    type Output = u8;
+
+    fn bitor(self, rhs: u8) -> u8 {
+        self as u8 | rhs
     }
 }
 
@@ -198,6 +211,7 @@ pub struct LCD {
     display_control: DisplayControl,
     display_mode: DisplayMode,
     row_offsets: [u8; 4],
+    num_lines: u8,
 }
 
 impl LCD {
@@ -229,6 +243,7 @@ impl LCD {
             display_control,
             display_mode,
             row_offsets: [0x00; 4],
+            num_lines: 1,
         }
     }
 
@@ -236,6 +251,8 @@ impl LCD {
         if lines > 1 {
             self.display_function.lines = Lines::Lines2;
         }
+
+        self.num_lines = lines;
 
         self.set_row_offsets(0x00, 0x40, 0x00 + cols, 0x40 + cols);
 
@@ -265,7 +282,7 @@ impl LCD {
         // according to datasheet, we need at least 40ms after power rises above 2.7V
         // before sending commands. Arduino can turn on way before 4.5V so we'll wait 50
         // TODO: Is the wait time for RPi different from Arduino?
-        thread::sleep(time::Duration::from_millis(50));
+        delay_micros(50000);
         self.pins.rs.write(GpioPinSignal::Low);
         self.pins.enable.write(GpioPinSignal::Low);
         if let Some(rw_pin) = &self.pins.rw {
@@ -279,15 +296,15 @@ impl LCD {
 
             // we start in 8bit mode, try to set 4 bit mode
             self.write_4_bits(0x03);
-            thread::sleep(time::Duration::from_micros(45000));
+            delay_micros(45000);
 
             // second try
             self.write_4_bits(0x03);
-            thread::sleep(time::Duration::from_micros(4500)); // wait min 4.1ms
+            delay_micros(4500); // wait min 4.1ms
 
             // third go!
             self.write_4_bits(0x03);
-            thread::sleep(time::Duration::from_micros(150));
+            delay_micros(150);
 
             // finally, set to 4-bit interface
             self.write_4_bits(0x02);
@@ -297,11 +314,11 @@ impl LCD {
 
             // Send function set command sequence
             self.command(Command::FunctionSet | &self.display_function);
-            thread::sleep(time::Duration::from_micros(4500));
+            delay_micros(4500);
 
             // second try
             self.command(Command::FunctionSet | &self.display_function);
-            thread::sleep(time::Duration::from_micros(150));
+            delay_micros(150);
 
             // third go
             self.command(Command::FunctionSet | &self.display_function);
@@ -328,16 +345,33 @@ impl LCD {
     }
 
     pub fn set_cursor(&self, col: u8, row: u8) {
-        println!("Settings cursor to: {},{}", col, row);
+        eprintln!("Settings cursor to: {},{}", col, row);
+
+        let mut row = row;
+        let max_rows = self.row_offsets.len().try_into().unwrap();
+
+        if row >= max_rows {
+            row = max_rows - 1;
+        }
+
+        if row >= self.num_lines {
+            row = self.num_lines - 1;
+        }
+
+        self.command(Command::SetDDRamAddress | (col + self.row_offsets[row as usize]));
     }
 
     pub fn print(&self, msg: &str) {
-        println!("Printing: {}", msg);
+        eprintln!("Printing: {}", msg);
+
+        msg.as_bytes().iter().for_each(|b| {
+            self.write(*b);
+        });
     }
 
     fn clear(&self) {
         self.command(Command::ClearDisplay as u8);
-        thread::sleep(time::Duration::from_micros(2000));
+        delay_micros(2000);
     }
 
     fn display(&mut self) {
@@ -377,11 +411,11 @@ impl LCD {
 
     fn pulse_enable(&self) {
         self.pins.enable.write(GpioPinSignal::Low);
-        thread::sleep(time::Duration::from_micros(1));
+        delay_micros(1);
         self.pins.enable.write(GpioPinSignal::High);
-        thread::sleep(time::Duration::from_micros(1));
+        delay_micros(1);
         self.pins.enable.write(GpioPinSignal::Low);
-        thread::sleep(time::Duration::from_micros(100));
+        delay_micros(100);
     }
 
     fn write_4_bits(&self, value: u8) {
@@ -391,11 +425,15 @@ impl LCD {
             .for_each(|(i, pin)| {
                 pin.write(GpioPinSignal::from((value >> i) & 0x01));
             });
+
+        self.pulse_enable();
     }
 
     fn write_8_bits(&self, value: u8) {
         self.pins.data.iter().enumerate().for_each(|(i, pin)| {
             pin.write(GpioPinSignal::from((value >> i) & 0x01));
         });
+
+        self.pulse_enable();
     }
 }
