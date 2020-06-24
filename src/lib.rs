@@ -1,4 +1,4 @@
-// use gpio_cdev::*;
+use gpio_cdev::*;
 use std::{thread, time};
 use std::ops::BitOr;
 use std::convert::TryInto;
@@ -7,7 +7,9 @@ fn delay_micros(micros: u64) {
     thread::sleep(time::Duration::from_micros(micros));
 }
 
-#[derive(Debug, PartialEq)]
+const DATA_PINS: usize = 8;
+
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum GpioPin {
     NONE = -1,
     P0 = 0,
@@ -41,19 +43,20 @@ pub enum GpioPin {
 }
 
 impl GpioPin {
-    fn set_mode(&self, mode: GpioPinMode) {
-        eprintln!("Set pin mode: {:?} -> {:?}", self, mode);
-    }
 
-    fn write(&self, value: GpioPinSignal) {
-        eprintln!("{:3} -> {:?}", format!("{:?}", self), value);
+    fn line_handle(&self, chip: &mut Chip, consumer: &str) -> Result<LineHandle, errors::Error> {
+        Ok(chip.get_line(*self as u32)?.request(LineRequestFlags::OUTPUT, 1, consumer)?)
     }
 }
 
-#[derive(Debug)]
-enum GpioPinMode {
-    Input,
-    Output,
+trait OutputPin {
+    fn write(&self, value: GpioPinSignal);
+}
+
+impl OutputPin for LineHandle {
+    fn write(&self, value: GpioPinSignal) {
+        self.set_value(value as u8).unwrap();
+    }
 }
 
 #[derive(Debug)]
@@ -181,7 +184,14 @@ pub struct Pins {
     pub rs: GpioPin,
     pub rw: Option<GpioPin>,
     pub enable: GpioPin,
-    pub data: [GpioPin; 8],
+    pub data: [GpioPin; DATA_PINS],
+}
+
+struct LineHandles {
+    rs: LineHandle,
+    rw: Option<LineHandle>,
+    enable: LineHandle,
+    data: [Option<LineHandle>; DATA_PINS],
 }
 
 #[derive(Debug)]
@@ -204,9 +214,9 @@ struct DisplayMode {
     entry_shift_mode: DisplayEntryShiftMode,
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct LCD {
-    pins: Pins,
+    pins: LineHandles,
     display_function: DisplayFunction,
     display_control: DisplayControl,
     display_mode: DisplayMode,
@@ -215,7 +225,7 @@ pub struct LCD {
 }
 
 impl LCD {
-    pub fn new(pins: Pins) -> LCD {
+    pub fn new(pins: Pins) -> Result<LCD, errors::Error> {
         let mut display_function = DisplayFunction {
             mode: Mode::Bits4,
             lines: Lines::Lines1,
@@ -237,14 +247,30 @@ impl LCD {
             entry_shift_mode: DisplayEntryShiftMode::Decrement,
         };
 
-        LCD {
+        let mut chip = Chip::new("/dev/gpiochip0")?;
+
+        let mut data_pins: [Option<LineHandle>; DATA_PINS] = Default::default();
+        for i in 0..DATA_PINS {
+            if pins.data[i] != GpioPin::NONE {
+                let line = pins.data[i].line_handle(&mut chip, format!("data{}", i).as_str()).unwrap();
+                data_pins[i] = Some(line);
+            }
+        }
+        let pins = LineHandles {
+            rs: pins.rs.line_handle(&mut chip, "rs")?,
+            rw: pins.rw.map(|p| { p.line_handle(&mut chip, "rw").unwrap() }),
+            enable: pins.enable.line_handle(&mut chip, "enable")?,
+            data: data_pins,
+        };
+
+        Ok(LCD {
             pins,
             display_function,
             display_control,
             display_mode,
             row_offsets: [0x00; 4],
             num_lines: 1,
-        }
+        })
     }
 
     pub fn begin(&mut self, cols: u8, lines: u8, char_size: CharSize) {
@@ -259,24 +285,6 @@ impl LCD {
         if char_size != CharSize::Dots5x8 && lines == 1 {
             self.display_function.char_size = CharSize::Dots5x10;
         }
-
-        self.pins.rs.set_mode(GpioPinMode::Output);
-
-        if let Some(rw_pin) = &self.pins.rw {
-            rw_pin.set_mode(GpioPinMode::Output);
-        }
-
-        self.pins.enable.set_mode(GpioPinMode::Output);
-
-        let data_pins = if self.display_function.mode == Mode::Bits4 {
-            &self.pins.data[0..4]
-        } else {
-            &self.pins.data[..]
-        };
-
-        data_pins.iter().for_each(|pin| {
-            pin.set_mode(GpioPinMode::Output);
-        });
 
         // SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
         // according to datasheet, we need at least 40ms after power rises above 2.7V
@@ -423,7 +431,7 @@ impl LCD {
             .iter()
             .enumerate()
             .for_each(|(i, pin)| {
-                pin.write(GpioPinSignal::from((value >> i) & 0x01));
+                pin.as_ref().unwrap().write(GpioPinSignal::from((value >> i) & 0x01));
             });
 
         self.pulse_enable();
@@ -431,7 +439,7 @@ impl LCD {
 
     fn write_8_bits(&self, value: u8) {
         self.pins.data.iter().enumerate().for_each(|(i, pin)| {
-            pin.write(GpioPinSignal::from((value >> i) & 0x01));
+            pin.as_ref().unwrap().write(GpioPinSignal::from((value >> i) & 0x01));
         });
 
         self.pulse_enable();
