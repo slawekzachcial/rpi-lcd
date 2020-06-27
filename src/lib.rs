@@ -87,37 +87,59 @@ enum Command {
     SetDDRamAddress = 0x80,
 }
 
-impl BitOr<&DisplayFunction> for Command {
-    type Output = u8;
+impl Command {
+    fn clear_display() -> u8 {
+        Command::ClearDisplay as u8
+    }
 
-    fn bitor(self, rhs: &DisplayFunction) -> u8 {
-        self as u8 | rhs.mode as u8 | rhs.lines as u8 | rhs.char_size as u8
+    fn function_set(df: &DisplayFunction) -> u8 {
+        Command::FunctionSet as u8 | df.mode as u8 | df.lines as u8 | df.char_size as u8
+    }
+
+    fn display_control(dc: &DisplayControl) -> u8 {
+        Command::DisplayControl as u8 | dc.display as u8 | dc.cursor as u8 | dc.blink as u8
+    }
+
+    fn entry_mode_set(dm: &DisplayMode) -> u8 {
+        Command::EntryModeSet as u8 | dm.entry_mode as u8 | dm.entry_shift_mode as u8
+    }
+
+    fn set_ddram_address(address: u8) -> u8 {
+        Command::SetDDRamAddress as u8 | address
     }
 }
 
-impl BitOr<&DisplayControl> for Command {
-    type Output = u8;
+// impl BitOr<&DisplayFunction> for Command {
+//     type Output = u8;
 
-    fn bitor(self, rhs: &DisplayControl) -> u8 {
-        self as u8 | rhs.display as u8 | rhs.cursor as u8 | rhs.blink as u8
-    }
-}
+//     fn bitor(self, rhs: &DisplayFunction) -> u8 {
+//         self as u8 | rhs.mode as u8 | rhs.lines as u8 | rhs.char_size as u8
+//     }
+// }
 
-impl BitOr<&DisplayMode> for Command {
-    type Output = u8;
+// impl BitOr<&DisplayControl> for Command {
+//     type Output = u8;
 
-    fn bitor(self, rhs: &DisplayMode) -> u8 {
-        self as u8 | rhs.entry_mode as u8 | rhs.entry_shift_mode as u8
-    }
-}
+//     fn bitor(self, rhs: &DisplayControl) -> u8 {
+//         self as u8 | rhs.display as u8 | rhs.cursor as u8 | rhs.blink as u8
+//     }
+// }
 
-impl BitOr<u8> for Command {
-    type Output = u8;
+// impl BitOr<&DisplayMode> for Command {
+//     type Output = u8;
 
-    fn bitor(self, rhs: u8) -> u8 {
-        self as u8 | rhs
-    }
-}
+//     fn bitor(self, rhs: &DisplayMode) -> u8 {
+//         self as u8 | rhs.entry_mode as u8 | rhs.entry_shift_mode as u8
+//     }
+// }
+
+// impl BitOr<u8> for Command {
+//     type Output = u8;
+
+//     fn bitor(self, rhs: u8) -> u8 {
+//         self as u8 | rhs
+//     }
+// }
 
 #[derive(Debug, Clone, Copy)]
 enum DisplayEntryMode {
@@ -214,7 +236,6 @@ struct DisplayMode {
     entry_shift_mode: DisplayEntryShiftMode,
 }
 
-// #[derive(Debug)]
 pub struct LCD {
     pins: LineHandles,
     display_function: DisplayFunction,
@@ -321,19 +342,23 @@ impl LCD {
             // page 45 figure 23
 
             // Send function set command sequence
-            self.command(Command::FunctionSet | &self.display_function);
+            // self.command(Command::FunctionSet | &self.display_function);
+            self.command(Command::function_set(&self.display_function));
             delay_micros(4500);
 
             // second try
-            self.command(Command::FunctionSet | &self.display_function);
+            // self.command(Command::FunctionSet | &self.display_function);
+            self.command(Command::function_set(&self.display_function));
             delay_micros(150);
 
             // third go
-            self.command(Command::FunctionSet | &self.display_function);
+            // self.command(Command::FunctionSet | &self.display_function);
+            self.command(Command::function_set(&self.display_function));
         }
 
         // finally, set # lines, font size, etc.
-        self.command(Command::FunctionSet | &self.display_function);
+        // self.command(Command::FunctionSet | &self.display_function);
+        self.command(Command::function_set(&self.display_function));
 
         // turn the display on with no cursor or blinking default
         self.display_control.display = DisplayState::On;
@@ -349,7 +374,8 @@ impl LCD {
         self.display_mode.entry_shift_mode = DisplayEntryShiftMode::Decrement;
 
         // set the entry mode
-        self.command(Command::EntryModeSet | &self.display_mode);
+        // self.command(Command::EntryModeSet | &self.display_mode);
+        self.command(Command::entry_mode_set(&self.display_mode));
     }
 
     pub fn set_cursor(&self, col: u8, row: u8) {
@@ -366,7 +392,8 @@ impl LCD {
             row = self.num_lines - 1;
         }
 
-        self.command(Command::SetDDRamAddress | (col + self.row_offsets[row as usize]));
+        // self.command(Command::SetDDRamAddress | (col + self.row_offsets[row as usize]));
+        self.command(Command::set_ddram_address(col + self.row_offsets[row as usize]));
     }
 
     pub fn print(&self, msg: &str) {
@@ -378,13 +405,15 @@ impl LCD {
     }
 
     fn clear(&self) {
-        self.command(Command::ClearDisplay as u8);
+        // self.command(Command::ClearDisplay as u8);
+        self.command(Command::clear_display());
         delay_micros(2000);
     }
 
     fn display(&mut self) {
         self.display_control.display = DisplayState::On;
-        self.command(Command::DisplayControl | &self.display_control);
+        // self.command(Command::DisplayControl | &self.display_control);
+        self.command(Command::display_control(&self.display_control));
     }
 
     fn set_row_offsets(&mut self, row1: u8, row2: u8, row3: u8, row4: u8) {
