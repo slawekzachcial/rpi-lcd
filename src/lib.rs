@@ -1,6 +1,5 @@
 use gpio_cdev::*;
 use std::{thread, time};
-use std::ops::BitOr;
 use std::convert::TryInto;
 
 fn delay_micros(micros: u64) {
@@ -81,7 +80,7 @@ enum Command {
     ReturnHome = 0x02,
     EntryModeSet = 0x04,
     DisplayControl = 0x08,
-    CursorShiftLeft = 0x10,
+    CursorShift = 0x10,
     FunctionSet = 0x20,
     SetCGRamAddress = 0x40,
     SetDDRamAddress = 0x80,
@@ -92,54 +91,34 @@ impl Command {
         Command::ClearDisplay as u8
     }
 
-    fn function_set(df: &DisplayFunction) -> u8 {
-        Command::FunctionSet as u8 | df.mode as u8 | df.lines as u8 | df.char_size as u8
-    }
-
-    fn display_control(dc: &DisplayControl) -> u8 {
-        Command::DisplayControl as u8 | dc.display as u8 | dc.cursor as u8 | dc.blink as u8
+    fn return_home() -> u8 {
+        Command::ReturnHome as u8
     }
 
     fn entry_mode_set(dm: &DisplayMode) -> u8 {
         Command::EntryModeSet as u8 | dm.entry_mode as u8 | dm.entry_shift_mode as u8
     }
 
+    fn display_control(dc: &DisplayControl) -> u8 {
+        Command::DisplayControl as u8 | dc.display as u8 | dc.cursor as u8 | dc.blink as u8
+    }
+
+    fn cursor_shift(what: &MoveControl, direction: &MoveDirection) -> u8 {
+        Command::CursorShift as u8 | what.as_u8() | direction.as_u8()
+    }
+
+    fn function_set(df: &DisplayFunction) -> u8 {
+        Command::FunctionSet as u8 | df.mode as u8 | df.lines as u8 | df.char_size as u8
+    }
+
     fn set_ddram_address(address: u8) -> u8 {
         Command::SetDDRamAddress as u8 | address
     }
+
+    fn set_cgram_address(address: u8) -> u8 {
+        Command::SetCGRamAddress as u8 | address
+    }
 }
-
-// impl BitOr<&DisplayFunction> for Command {
-//     type Output = u8;
-
-//     fn bitor(self, rhs: &DisplayFunction) -> u8 {
-//         self as u8 | rhs.mode as u8 | rhs.lines as u8 | rhs.char_size as u8
-//     }
-// }
-
-// impl BitOr<&DisplayControl> for Command {
-//     type Output = u8;
-
-//     fn bitor(self, rhs: &DisplayControl) -> u8 {
-//         self as u8 | rhs.display as u8 | rhs.cursor as u8 | rhs.blink as u8
-//     }
-// }
-
-// impl BitOr<&DisplayMode> for Command {
-//     type Output = u8;
-
-//     fn bitor(self, rhs: &DisplayMode) -> u8 {
-//         self as u8 | rhs.entry_mode as u8 | rhs.entry_shift_mode as u8
-//     }
-// }
-
-// impl BitOr<u8> for Command {
-//     type Output = u8;
-
-//     fn bitor(self, rhs: u8) -> u8 {
-//         self as u8 | rhs
-//     }
-// }
 
 #[derive(Debug, Clone, Copy)]
 enum DisplayEntryMode {
@@ -177,10 +156,29 @@ enum MoveControl {
     Cursor = 0x00,
 }
 
+impl MoveControl {
+    fn as_u8(&self) -> u8 {
+        match self {
+            MoveControl::Display => MoveControl::Display as u8,
+            MoveControl::Cursor => MoveControl::Cursor as u8,
+        }
+    }
+}
+
+
 #[derive(Debug)]
 enum MoveDirection {
     Right = 0x04,
     Left = 0x00,
+}
+
+impl MoveDirection {
+    fn as_u8(&self) -> u8 {
+        match self {
+            MoveDirection::Right => MoveDirection::Right as u8,
+            MoveDirection::Left => MoveDirection::Left as u8,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -342,22 +340,18 @@ impl LCD {
             // page 45 figure 23
 
             // Send function set command sequence
-            // self.command(Command::FunctionSet | &self.display_function);
             self.command(Command::function_set(&self.display_function));
             delay_micros(4500);
 
             // second try
-            // self.command(Command::FunctionSet | &self.display_function);
             self.command(Command::function_set(&self.display_function));
             delay_micros(150);
 
             // third go
-            // self.command(Command::FunctionSet | &self.display_function);
             self.command(Command::function_set(&self.display_function));
         }
 
         // finally, set # lines, font size, etc.
-        // self.command(Command::FunctionSet | &self.display_function);
         self.command(Command::function_set(&self.display_function));
 
         // turn the display on with no cursor or blinking default
@@ -374,7 +368,6 @@ impl LCD {
         self.display_mode.entry_shift_mode = DisplayEntryShiftMode::Decrement;
 
         // set the entry mode
-        // self.command(Command::EntryModeSet | &self.display_mode);
         self.command(Command::entry_mode_set(&self.display_mode));
     }
 
@@ -392,7 +385,6 @@ impl LCD {
             row = self.num_lines - 1;
         }
 
-        // self.command(Command::SetDDRamAddress | (col + self.row_offsets[row as usize]));
         self.command(Command::set_ddram_address(col + self.row_offsets[row as usize]));
     }
 
@@ -404,16 +396,81 @@ impl LCD {
         });
     }
 
-    fn clear(&self) {
-        // self.command(Command::ClearDisplay as u8);
+    pub fn clear(&self) {
         self.command(Command::clear_display());
         delay_micros(2000);
     }
 
-    fn display(&mut self) {
-        self.display_control.display = DisplayState::On;
-        // self.command(Command::DisplayControl | &self.display_control);
+    pub fn home(&self) {
+        self.command(Command::return_home());
+        delay_micros(2000);
+    }
+
+    pub fn no_display(&mut self) {
+        self.display_control.display = DisplayState::Off;
         self.command(Command::display_control(&self.display_control));
+    }
+
+    pub fn display(&mut self) {
+        self.display_control.display = DisplayState::On;
+        self.command(Command::display_control(&self.display_control));
+    }
+
+    pub fn no_cursor(&mut self) {
+        self.display_control.cursor = CursorState::Off;
+        self.command(Command::display_control(&self.display_control));
+    }
+
+    pub fn cursor(&mut self) {
+        self.display_control.cursor = CursorState::On;
+        self.command(Command::display_control(&self.display_control));
+    }
+
+    pub fn no_blink(&mut self) {
+        self.display_control.blink = BlinkState::Off;
+        self.command(Command::display_control(&self.display_control));
+    }
+
+    pub fn blink(&mut self) {
+        self.display_control.blink = BlinkState::On;
+        self.command(Command::display_control(&self.display_control));
+    }
+
+    pub fn scroll_display_left(&self) {
+        self.command(Command::cursor_shift(&MoveControl::Display, &MoveDirection::Left));
+    }
+
+    pub fn scroll_display_right(&self) {
+        self.command(Command::cursor_shift(&MoveControl::Display, &MoveDirection::Right));
+    }
+
+    pub fn left_to_right(&mut self) {
+        self.display_mode.entry_mode = DisplayEntryMode::Left;
+        self.command(Command::entry_mode_set(&self.display_mode));
+    }
+
+    pub fn right_to_left(&mut self) {
+        self.display_mode.entry_mode = DisplayEntryMode::Right;
+        self.command(Command::entry_mode_set(&self.display_mode));
+    }
+
+    pub fn autoscroll(&mut self) {
+        self.display_mode.entry_shift_mode = DisplayEntryShiftMode::Increment;
+        self.command(Command::entry_mode_set(&self.display_mode));
+    }
+
+    pub fn no_autscroll(&mut self) {
+        self.display_mode.entry_shift_mode = DisplayEntryShiftMode::Decrement;
+        self.command(Command::entry_mode_set(&self.display_mode));
+    }
+
+    // Allows us to fill the first 8 CGRAM locations with custom characters
+    pub fn create_char(&self, location: u8, charmap: [u8; 8]) {
+        let location = location & 0x7;
+        self.command(Command::set_cgram_address(location << 3));
+        charmap.iter().for_each(|b| {
+            self.write(*b);
+        });
     }
 
     fn set_row_offsets(&mut self, row1: u8, row2: u8, row3: u8, row4: u8) {
