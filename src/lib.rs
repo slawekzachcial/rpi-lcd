@@ -116,6 +116,7 @@ impl Command {
     }
 
     fn set_cgram_address(address: u8) -> u8 {
+        eprintln!("address: {:08b}", address);
         Command::SetCGRamAddress as u8 | address
     }
 }
@@ -469,6 +470,7 @@ impl LCD {
         let location = location & 0x7;
         self.command(Command::set_cgram_address(location << 3));
         charmap.iter().for_each(|b| {
+            eprintln!("{:05b}", *b);
             self.write(*b);
         });
     }
@@ -481,10 +483,11 @@ impl LCD {
     }
 
     fn command(&self, value: u8) {
+        eprintln!("command: {:08b}", value);
         self.send(value, GpioPinSignal::Low);
     }
 
-    fn write(&self, value: u8) {
+    pub fn write(&self, value: u8) {
         self.send(value, GpioPinSignal::High);
     }
 
