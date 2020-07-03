@@ -50,6 +50,15 @@ fn do_main() -> Result<(), errors::Error> {
     lcd.set_cursor(0, 1);
     lcd.print("... world!");
 }
+
+fn main() {
+    match do_main() {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("Error {:?}", e);
+        }
+    }
+}
 ```
 
 > Note that `Pxx` are GPIO pins and so, for example, P26 is pin GPIO 26 which
