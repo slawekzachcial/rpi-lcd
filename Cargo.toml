@@ -1,8 +1,11 @@
 [package]
-name = "lcd"
+name = "rpi-lcd"
 version = "0.1.0"
 authors = ["Slawek Zachcial <slawek.zachcial@gmail.com>"]
 edition = "2018"
+description = "Raspberry Pi driver for LCD compatible with HD44780"
+homepage = "https://github.com/slawekzachcial/rpi-lcd"
+repository = "https://github.com/slawekzachcial/rpi-lcd"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
