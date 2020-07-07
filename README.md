@@ -83,7 +83,7 @@ SSH server on it, you can copy it to the board using the following command:
 scp target/arm-unknown-linux-musleabihf/debug/lcd pi@raspberrypi.local:/home/pi
 ```
 
-Finally, to run the demo binary run:
+Finally, to run the demo binary:
 ```
 ssh pi@raspberrypi.local /home/pi/lcd
 ```
