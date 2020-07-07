@@ -63,3 +63,27 @@ fn main() {
 
 > Note that `Pxx` are GPIO pins and so, for example, P26 is pin GPIO 26 which
 > is on Pi's pin 37 as shown on [this diagram](https://www.raspberrypi.org/documentation/usage/gpio/).
+
+## Building
+
+In order to use this library, it needs to be cross-compiled for Raspberry Pi.
+
+This can be accomplished using [rust-embedded/cross](https://github.com/rust-embedded/cross)
+tool. The tool documentation provides details how to install and use it.
+
+Once installed, to compile the library use the following command:
+```
+cross build --target arm-unknown-linux-musleabihf
+```
+
+The project contains a binary that demos all the library functions. Assuming
+your Raspberry Pi is available at DNS name `raspberrypi.local` and you set up
+SSH server on it, you can copy it to the board using the following command:
+```
+scp target/arm-unknown-linux-musleabihf/debug/lcd pi@raspberrypi.local:/home/pi
+```
+
+Finally, to run the demo binary run:
+```
+ssh pi@raspberrypi.local /home/pi/lcd
+```
