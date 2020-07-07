@@ -1,5 +1,5 @@
 use gpio_cdev::errors;
-use lcd::{CharSize, GpioPin::*, Pins, LCD};
+use rpi_lcd::{CharSize, GpioPin::*, Pins, LCD};
 use std::{thread, time};
 
 fn do_main() -> Result<(), errors::Error> {
