@@ -7,7 +7,7 @@ fn do_main() -> Result<(), errors::Error> {
         rs: P7,
         rw: None,
         enable: P8,
-        data: [P9, P10, P11, P12, NONE, NONE, NONE, NONE],
+        data: [NONE, NONE, NONE, NONE, P9, P10, P11, P12],
     })?;
 
     lcd.begin(16, 2, CharSize::Dots5x8);

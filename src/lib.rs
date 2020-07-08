@@ -252,7 +252,7 @@ impl LCD {
             char_size: CharSize::Dots5x8,
         };
 
-        if pins.data[4] != GpioPin::NONE {
+        if pins.data[0] != GpioPin::NONE {
             display_function.mode = Mode::Bits8;
         }
 
@@ -516,7 +516,7 @@ impl LCD {
     }
 
     fn write_4_bits(&self, value: u8) {
-        self.pins.data[0..4]
+        self.pins.data[4..8]
             .iter()
             .enumerate()
             .for_each(|(i, pin)| {

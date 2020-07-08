@@ -40,7 +40,7 @@ fn do_main() -> Result<(), errors::Error> {
         rs: P26,
         rw: None,
         enable: P19,
-        data: [P13, P06, P05, P11, NONE, NONE, NONE, NONE],
+        data: [NONE, NONE, NONE, NONE, P13, P06, P05, P11],
     })?;
 
     lcd.begin(16, 2, CharSize::Dots5x8);
