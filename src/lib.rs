@@ -1,3 +1,43 @@
+//! The `rpi-lcd` crate allows Raspberry Pi to control LiquidCrystal displays (LCDs) based on the
+//! Hitachi HD44780 (or a compatible) chipset, which is found on most text-based LCDs. The library
+//! works with in either 4- or 8-bit mode (i.e. using 4 or 8 data lines in addition to the `rs`,
+//! `enable`, and, optionally, the `rw` control lines).
+//!
+//! The crate is a Rust port of [LiquidCrystal](https://github.com/arduino-libraries/LiquidCrystal)
+//! Arduino library. The library API documentation has also been copied and adapted accordingly.
+//!
+//! # Examples
+//!
+//! The following example shows how to print "Hello World!" assuming Raspberry Pi
+//! has been connected to the LCD display using the referenced below GPIO pins.
+//!
+//! ```rust,no_run
+//! use gpio_cdev::errors;
+//! use rpi_lcd::{CharSize, GpioPin::*, Pins, LCD};
+//!
+//! fn do_main() -> Result<(), errors::Error> {
+//!
+//!     let mut lcd = LCD::new(Pins {
+//!         rs: P26,
+//!         rw: None,
+//!         enable: P19,
+//!         data: [NONE, NONE, NONE, NONE, P13, P06, P05, P11],
+//!     })?;
+//!
+//!     lcd.begin(16, 2, CharSize::Dots5x8);
+//!     lcd.print("Hello,  World!");
+//! }
+//!
+//! fn main() {
+//!     match do_main() {
+//!         Ok(()) => {}
+//!         Err(e) => {
+//!             eprintln!("Error {:?}", e);
+//!         }
+//!     }
+//! }
+//! ```
+
 use gpio_cdev::*;
 use std::{thread, time};
 use std::convert::TryInto;
@@ -8,6 +48,11 @@ fn delay_micros(micros: u64) {
 
 const DATA_PINS: usize = 8;
 
+/// Raspberry Pi GPIO pin references
+///
+/// The values of this enum are used to indicate in [Pins](struct.Pins.html] which GPIO pin is
+/// connected to which LCD pin. Use `GpioPin::NONE` for LCD data pins 0 to 3 to indicate the LCD
+/// works in 4-bit mode.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum GpioPin {
     NONE = -1,
@@ -182,6 +227,7 @@ impl MoveDirection {
     }
 }
 
+/// Size of the LCD character
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum CharSize {
     Dots5x8 = 0x00,
@@ -200,11 +246,25 @@ enum Lines {
     Lines2 = 0x08,
 }
 
+/// LCD pins
+///
+/// To inidicate that LCD works in 4-bit mode use `GpioPin::NONE` as the first
+/// 4 items of `data` pins array.
 #[derive(Debug)]
 pub struct Pins {
+    /// GPIO pin connected to LCD RS pin
     pub rs: GpioPin,
+
+    /// GPIO pin connected to LCD RW pin; may be set to `None` if LCD RW pin is not used
     pub rw: Option<GpioPin>,
+
+    /// GPIO pin connected to LCD ENABLE pin
     pub enable: GpioPin,
+
+    /// GPIO pins connected to LCD DATA pins d0 to d7
+    ///
+    /// Set the first 4 items of this array to `GpioPin::NONE` to indicate LCD
+    /// is working in 4-bit mode.
     pub data: [GpioPin; DATA_PINS],
 }
 
@@ -235,6 +295,7 @@ struct DisplayMode {
     entry_shift_mode: DisplayEntryShiftMode,
 }
 
+/// LCD display main struct
 pub struct LCD {
     pins: LineHandles,
     display_function: DisplayFunction,
@@ -245,6 +306,22 @@ pub struct LCD {
 }
 
 impl LCD {
+
+    /// Creates a variable of type LCD. The display can be controlled using 4 or 8 data
+    /// lines. If the former, set the `Pins.data` 0 to 3 array items to `GpioPin::NONE`
+    /// and leave those lines unconnected. The RW pin can be tied to ground instead of connected to
+    /// a pin on the Raspberry; if so, set the `Pins.rw` to `None`. See [Pins](struct.Pins.html)
+    /// for detailed parameters description.
+    ///
+    /// # Examples
+    /// ```rust,no_run
+    /// let mut lcd = LCD::new(Pins {
+    ///     rs: P26,
+    ///     rw: None,
+    ///     enable: P19,
+    ///     data: [NONE, NONE, NONE, NONE, P13, P06, P05, P11],
+    /// })?;
+    /// ```
     pub fn new(pins: Pins) -> Result<LCD, errors::Error> {
         let mut display_function = DisplayFunction {
             mode: Mode::Bits4,
@@ -293,6 +370,23 @@ impl LCD {
         })
     }
 
+    /// Initializes the interface to the LCD screen, and specifies the dimensions (width and
+    /// height) of the display. `begin()` needs to be called before any other LCD library commands.
+    /// `cols` is the number of characters per line, `lines` is the number of lines,
+    /// `char_size` is the size of the character matrix.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # let mut lcd = LCD::new(Pins {
+    /// #     rs: P26,
+    /// #     rw: None,
+    /// #     enable: P19,
+    /// #     data: [NONE, NONE, NONE, NONE, P13, P06, P05, P11],
+    /// # })?;
+    /// #
+    /// lcd.begin(16, 2, CharSize::Dots5x8);
+    /// ```
     pub fn begin(&mut self, cols: u8, lines: u8, char_size: CharSize) {
         if lines > 1 {
             self.display_function.lines = Lines::Lines2;
@@ -372,6 +466,27 @@ impl LCD {
         self.command(Command::entry_mode_set(&self.display_mode));
     }
 
+    /// Position the LCD cursor
+    ///
+    /// That is, set the location at which subsequent text written to the LCD will be displayed.
+    /// `col` is the column at which to position the cursor (with 0 being the first column)
+    /// `row` is the row at which to position the cursor (with 0 being the first row).
+    ///
+    /// # Examples
+    ///
+    /// To position the cursor at the first column of the second line:
+    ///
+    /// ```rust,no_run
+    /// # let mut lcd = LCD::new(Pins {
+    /// #     rs: P26,
+    /// #     rw: None,
+    /// #     enable: P19,
+    /// #     data: [NONE, NONE, NONE, NONE, P13, P06, P05, P11],
+    /// # })?;
+    /// #
+    /// # lcd.begin(16, 2, CharSize::Dots5x8);
+    /// lcd.set_cursor(0, 1);
+    /// ```
     pub fn set_cursor(&self, col: u8, row: u8) {
         eprintln!("Settings cursor to: {},{}", col, row);
 
@@ -389,6 +504,21 @@ impl LCD {
         self.command(Command::set_ddram_address(col + self.row_offsets[row as usize]));
     }
 
+    /// Print text to the LCD
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # let mut lcd = LCD::new(Pins {
+    /// #     rs: P26,
+    /// #     rw: None,
+    /// #     enable: P19,
+    /// #     data: [NONE, NONE, NONE, NONE, P13, P06, P05, P11],
+    /// # })?;
+    /// #
+    /// # lcd.begin(16, 2, CharSize::Dots5x8);
+    /// lcd.print("Hello,  World!");
+    /// ```
     pub fn print(&self, msg: &str) {
         eprintln!("Printing: {}", msg);
 
@@ -397,75 +527,177 @@ impl LCD {
         });
     }
 
+    /// Clear the LCD screen and position the cursor in the upper-left corner
     pub fn clear(&self) {
         self.command(Command::clear_display());
         delay_micros(2000);
     }
 
+    /// Position the cursor in the upper-left of the LCD
+    ///
+    /// That is, use that location in outputting subsequent text to the display. To also clear the
+    /// display, use the [clear()](#method.clear) function instead.
     pub fn home(&self) {
         self.command(Command::return_home());
         delay_micros(2000);
     }
 
+    /// Turn off the LCD display, without losing the text currently shown on it
+    ///
+    /// See also [display()](#method.display).
     pub fn no_display(&mut self) {
         self.display_control.display = DisplayState::Off;
         self.command(Command::display_control(&self.display_control));
     }
 
+    /// Turn on the LCD display, after it's been turned off with [no_display()](#method.no_display)
+    ///
+    /// This will restore the text (and cursor) that was on the display.
     pub fn display(&mut self) {
         self.display_control.display = DisplayState::On;
         self.command(Command::display_control(&self.display_control));
     }
 
+    /// Hide the LCD cursor
+    ///
+    /// See also [cursor](#method.cursor).
     pub fn no_cursor(&mut self) {
         self.display_control.cursor = CursorState::Off;
         self.command(Command::display_control(&self.display_control));
     }
 
+    /// Display the LCD cursor: an underscore (line) at the position to which the next character
+    /// will be written
+    ///
+    /// See also [no_cursor](#method.no_cursor).
     pub fn cursor(&mut self) {
         self.display_control.cursor = CursorState::On;
         self.command(Command::display_control(&self.display_control));
     }
 
+    /// Turn off the blinking LCD cursor
+    ///
+    /// See also [blink()](#method.blink).
     pub fn no_blink(&mut self) {
         self.display_control.blink = BlinkState::Off;
         self.command(Command::display_control(&self.display_control));
     }
 
+    /// Display the blinking LCD cursor
+    ///
+    /// If used in combination with the [cursor()](#method.cursor) function, the
+    /// result will depend on the particular display.
+    ///
+    /// See also [no_blink()](#method.no_blink).
     pub fn blink(&mut self) {
         self.display_control.blink = BlinkState::On;
         self.command(Command::display_control(&self.display_control));
     }
 
+    /// Scroll the contents of the display (text and cursor) one space to the left
+    ///
+    /// See also [scroll_display_right()](#method.scroll_display_right).
     pub fn scroll_display_left(&self) {
         self.command(Command::cursor_shift(&MoveControl::Display, &MoveDirection::Left));
     }
 
+    /// Scroll the contents of the display (text and cursor) one space to the right
+    ///
+    /// See also [scroll_display_left](#method.scroll_display_left).
     pub fn scroll_display_right(&self) {
         self.command(Command::cursor_shift(&MoveControl::Display, &MoveDirection::Right));
     }
 
+    /// Set the direction for text written to the LCD to left-to-right, the default
+    ///
+    /// This means that subsequent characters written to the display will go from left to right,
+    /// but does not affect previously-output text.
+    ///
+    /// See also [right_to_left()](#method.right_to_left).
     pub fn left_to_right(&mut self) {
         self.display_mode.entry_mode = DisplayEntryMode::Left;
         self.command(Command::entry_mode_set(&self.display_mode));
     }
 
+    /// Set the direction for text written to the LCD to right-to-left (the default is
+    /// left-to-right)
+    ///
+    /// This means that subsequent characters written to the display will go from right to left,
+    /// but does not affect previously-output text.
+    ///
+    /// See also [left-to-right()](#method.left_to_right).
     pub fn right_to_left(&mut self) {
         self.display_mode.entry_mode = DisplayEntryMode::Right;
         self.command(Command::entry_mode_set(&self.display_mode));
     }
 
+    /// Turn on automatic scrolling of the LCD
+    ///
+    /// This causes each character output to the display to push previous characters over by one
+    /// space. If the current text direction is left-to-right (the default), the display scrolls to
+    /// the left; if the current direction is right-to-left, the display scrolls to the right. This
+    /// has the effect of outputting each new character to the same location on the LCD.
+    ///
+    /// See also [no_autscroll()](#method.no_autscroll).
     pub fn autoscroll(&mut self) {
         self.display_mode.entry_shift_mode = DisplayEntryShiftMode::Increment;
         self.command(Command::entry_mode_set(&self.display_mode));
     }
 
+    /// Turn off automatic scrolling of the LCD
+    ///
+    /// See also [autoscroll()](#method.autoscroll).
     pub fn no_autscroll(&mut self) {
         self.display_mode.entry_shift_mode = DisplayEntryShiftMode::Decrement;
         self.command(Command::entry_mode_set(&self.display_mode));
     }
 
-    // Allows us to fill the first 8 CGRAM locations with custom characters
+    /// Create a custom character (glyph) for use on the LCD
+    ///
+    /// Up to eight characters of 5x8 pixels are supported (numbered 0 to 7). The appearance of
+    /// each custom character is specified by an array of eight bytes, one for each row. The five
+    /// least significant bits of each byte determine the pixels in that row. To display a custom
+    /// character on the screen, [write()](#method.write) its number.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # let mut lcd = LCD::new(Pins {
+    /// #     rs: P26,
+    /// #     rw: None,
+    /// #     enable: P19,
+    /// #     data: [NONE, NONE, NONE, NONE, P13, P06, P05, P11],
+    /// # })?;
+    /// #
+    /// # lcd.begin(16, 2, CharSize::Dots5x8);
+    /// #
+    ///
+    /// let smiley = [
+    ///     0b00000u8,
+    ///     0b10001u8,
+    ///     0b10001u8,
+    ///     0b00000u8,
+    ///     0b10001u8,
+    ///     0b01110u8,
+    ///     0b00000u8,
+    ///     0b00000u8,
+    /// ];
+    /// let big_dot = [
+    ///     0b00000u8,
+    ///     0b01110u8,
+    ///     0b11111u8,
+    ///     0b11111u8,
+    ///     0b11111u8,
+    ///     0b01110u8,
+    ///     0b00000u8,
+    ///     0b00000u8,
+    /// ];
+    /// lcd.create_char(0, smiley);
+    /// lcd.create_char(1, big_dot);
+    /// lcd.write(0);
+    /// lcd.set_cursor(3, 1);
+    /// lcd.write(1);
+    /// ```
     pub fn create_char(&self, location: u8, charmap: [u8; 8]) {
         let location = location & 0x7;
         self.command(Command::set_cgram_address(location << 3));
@@ -473,6 +705,11 @@ impl LCD {
             eprintln!("{:05b}", *b);
             self.write(*b);
         });
+    }
+
+    /// Write a character to the LCD
+    pub fn write(&self, value: u8) {
+        self.send(value, GpioPinSignal::High);
     }
 
     fn set_row_offsets(&mut self, row1: u8, row2: u8, row3: u8, row4: u8) {
@@ -485,10 +722,6 @@ impl LCD {
     fn command(&self, value: u8) {
         eprintln!("command: {:08b}", value);
         self.send(value, GpioPinSignal::Low);
-    }
-
-    pub fn write(&self, value: u8) {
-        self.send(value, GpioPinSignal::High);
     }
 
     fn send(&self, value: u8, signal: GpioPinSignal) {
